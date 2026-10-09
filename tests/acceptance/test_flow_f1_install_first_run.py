@@ -9,7 +9,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 def test_flow_f1_install_first_run():
     tmp = tempfile.mkdtemp(); app = os.path.join(tmp, "app"); home = os.path.join(tmp, "h"); os.makedirs(home)
     shutil.copytree(ROOT, app, ignore=shutil.ignore_patterns("_helpers", "__pycache__"))
-    env = {k: v for k, v in os.environ.items() if not k.startswith("RECEIPTS") and k != "PYTHONPATH"}
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("RECEIPTS", "XDG_")) and k != "PYTHONPATH"}
     env.update(HOME=home, SHELL="/bin/bash")
     p = subprocess.run(["./install.sh"], cwd=app, env=env, capture_output=True, text=True)
     assert p.returncode == 0, p.stdout + p.stderr
