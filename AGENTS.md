@@ -1,101 +1,78 @@
-# AGENTS.md — Receipts
+# AGENTS.md
 
-A command-line tool that independently records what a coding agent actually ran and changed during a session, then flags where the agent's own end-of-task summary doesn't match.
+Receipts is a command-line tool that independently records what a coding agent ran and changed during a session: the shell commands with their exit codes, and the files created, changed or deleted. It then compares that record with the agent's own end-of-task summary and flags the discrepancies. It is Python 3.11+, standard library only, and runs on Linux and macOS with no network calls.
 
-Built by an autonomous build (see NOTICE); maintained through GitHub issues by the owner, by
-bears, and by any coding agent that reads this file. CLAUDE.md imports this file.
-
-## What this is
-
-- **For:** Developers who hand multi-step tasks to coding agents and need to check what the agent really executed, such as which tests failed, which files changed and which commands errored, rather than trusting the agent's report.
-- **Does:** Receipts is a command-line tool that a developer installs on their own machine and runs their coding-agent session through. While the agent works, Receipts independently records every shell command the agent runs, with its exit code, and every file the agent creates, changes or deletes.
-- **Stack:** Python 3.11+, standard library only, a command-line tool.
-- **Scope:** `SCOPE.md` (users, numbered flows F1–F7, domain rules, definition of done).
-  `ASSUMPTIONS.md` lists the questions the idea left open and what this version does.
+This repository is maintained through GitHub issues, as `.github/bears.yml` describes.
 
 ## Setup, run, test
 
-These commands are run by CI exactly as written (`.github/workflows/ci.yml`, job `agents-md`).
-If you change a command, change it here in the same commit. A line marked `# serve` starts the
-service; the check waits for it to answer on 127.0.0.1, then stops it.
-
 ```sh
-./install.sh   # install
-python3 -m unittest discover -s tests -t .   # the product's own tests
-python -m pip install pytest==8.3.3 && python -m pytest tests/acceptance   # the acceptance suite
+./install.sh                 # copies to ~/.local/share/receipts-app, launcher in ~/.local/bin
+receipts --version           # check the install
+receipts init                # create the store (0700) and the default config
+receipts demo                # optional: load 6 demo sessions (`receipts demo --reset` removes them)
+receipts list
 ```
 
-- pytest is only needed for the acceptance suite; install it inside a virtual environment if
-  your system Python refuses.
-- Demo data: `see README` (empty install only).
-- Backup and restore: `see README`, `see README`.
-- Configuration: environment variables or `a config file` (see README › Configuration).
+- Alternatives to `./install.sh`: `pipx install .` or `pip install .`. To install elsewhere: `PREFIX=… BIN_DIR=… ./install.sh`.
+- Record a session: `receipts run -- <agent>` or `receipts run --test-cmd "pytest -q" -- <agent> [args]`. Then use `receipts report last`, `ack`, `close`, `export` and `verify` (see README › Commands).
+- Exit codes: `0` success; `1` flags met `report.fail_on`, or verification failed; `2` usage or input error.
 
-## Architecture in brief
+### Tests
+
+There are two suites, and both are the product's own.
+
+```sh
+# tests/ — unit, CLI and end-to-end tests (unittest)
+python3 -m unittest discover -s tests -t .
+
+# tests/acceptance/ — one file per behaviour, through the real interface (pytest)
+python -m pip install pytest==8.3.3 && python -m pytest tests/acceptance
+```
+
+- pytest is only needed for the acceptance suite. Install it in a virtual environment if your system Python refuses.
+- Run a single acceptance file with `python -m pytest tests/acceptance/<file>.py`.
+
+## Architecture
 
 | Path | Holds |
 |---|---|
-| `install.sh` | The launcher the README uses: `./install.sh` is its first command. |
+| `install.sh` | Installer: copies the app and puts the `receipts` launcher on `PATH`. |
+| `pyproject.toml` | Packaging metadata (`pipx install .` / `pip install .`). |
 | `receipts/__main__.py` | Runs the package as a command: `python -m receipts`. |
-| `receipts/chain.py` | Append-only, hash-chained event log. |
-| `receipts/claims.py` | Rule-based claim extraction from an agent's summary. |
-| `receipts/cli.py` | receipts command-line interface. |
-| `receipts/config.py` | Config file handling (~/.config/receipts/config.toml or $RECEIPTS_CONFIG). |
-| `receipts/demo.py` | `receipts demo`: six realistic sessions across three sample projects. |
-| `receipts/detect.py` | Test-run / build detection, test-result parsers, skip markers and test-file patterns. |
-| `receipts/reconcile.py` | Build a session model from its events and reconcile the summary's claims into flags. |
-| `receipts/render.py` | Report rendering: terminal text, Markdown, JSON and HTML. |
-| `receipts/runner.py` | `receipts run`: record an agent session. |
+| `receipts/cli.py` | Command-line interface: argument parsing and the commands. |
+| `receipts/runner.py` | `receipts run`: records an agent session. |
+| `receipts/shim.py` | Per-session `sh`/`bash`/`zsh` wrappers that log each command, then run the real shell. |
+| `receipts/snapshot.py` | Workspace snapshots (path, size, SHA-256) and before/after diffs. |
+| `receipts/detect.py` | Test-run and build detection, test-result parsers, skip markers, test-file patterns. |
+| `receipts/sources.py` | Finds the agent's final message and tool calls (Claude Code, Codex CLI, Aider, captured stdout). |
+| `receipts/claims.py` | Rule-based claim extraction from the agent's summary. |
+| `receipts/reconcile.py` | Builds a session model from its events and reconciles claims into flags. |
 | `receipts/sessions.py` | Session operations: load, report, summary, ack/unack, close, delete. |
-| `receipts/shim.py` | Shell wrapper installed (per session) as ``sh``/``bash``/``zsh`` on PATH and as $SHELL. |
-| `receipts/snapshot.py` | Workspace snapshots (path, size, SHA-256 of every file) and before/after diffs. |
-| `receipts/sources.py` | Auto-detection of the agent's final message (and reported tool calls). |
-| `receipts/store.py` | Data store layout, session IDs, audit log and schema migrations. |
-| `tests/test_cli.py` | CLI flows against demo data: list filters, show, ack/close, delete, export index, config, migrations. |
-| `tests/test_e2e.py` | End-to-end: record a scripted fake agent, attach its summary, check flags, ack, close, export, verify. |
-| `tests/test_settings.py` | Operator settings with environment overrides: both values of each. |
-| `tests/test_units.py` | Unit tests (the product's own test command). |
-| `tests/acceptance/` | The acceptance suite: one file per behaviour, through the real interface (pytest). |
-| `tests/acceptance/_helpers/` | Drivers the acceptance tests share (start the service, sign in, submit forms). |
+| `receipts/chain.py` | Append-only, hash-chained event log. |
+| `receipts/store.py` | Store layout, session IDs, audit log, schema migrations. |
+| `receipts/config.py` | Config file handling (`~/.config/receipts/config.toml` or `$RECEIPTS_CONFIG`). |
+| `receipts/render.py` | Report rendering: terminal text, Markdown, JSON, HTML. |
+| `receipts/demo.py` | `receipts demo`: the sample sessions. |
+| `tests/test_units.py`, `test_cli.py`, `test_e2e.py`, `test_settings.py` | Unit tests, CLI flows, end-to-end recording with a scripted agent, and settings with both values of each. |
+| `tests/fake_agent.py`, `tests/helpers.py` | Scripted agent and shared helpers for the tests above. |
+| `tests/acceptance/` | The acceptance suite, one `test_<what_it_checks>.py` per behaviour. |
+| `tests/acceptance/_helpers/` | `driver.py` and `run.py`: drivers the acceptance tests share. `conftest.py` sits alongside. |
+| `SCOPE.md`, `SECURITY.md`, `CHANGELOG.md`, `NOTICE` | Scope and flows, known security issues, release notes, and the notice published with each release. |
+| `.github/` | Issue templates, labels, CI workflows, and `bears.yml`. |
 
-Data lives in `./data`; the schema is versioned (the schema version is stored with the data; pending migrations run at start), and a
-pre-migration backup is written before any upgrade.
-
-Its `events.jsonl` is append-only, and every event is fsynced as soon as it is written. Each session is a directory of append-only files, and the store has a version file.
+Each session is a directory of append-only files, and the event log is hash-chained so `receipts verify` can detect edits. The store lives in `RECEIPTS_HOME` (default `~/.local/share/receipts`) and is versioned, with migrations run on upgrade.
 
 ## Conventions
 
 - Standard library only. Do not add a dependency to fix a bug.
-- Operator settings (binary business rules) are settings with an environment override; a new one
-  goes in the Settings page, the README table, `ASSUMPTIONS.md`, and gets an acceptance test per
-  value. Never hard-code one side of a business rule.
-- Every behaviour has one acceptance test file, `tests/acceptance/test_<what_it_checks>.py`,
-  with a plain docstring (what it checks, what is expected, where the rule comes from). Helpers
-  live in `tests/acceptance/_helpers/` and drive the product's real interface.
-- Plain words in user-facing files: no build-process jargon, no internal ids.
-
-## The acceptance suite, readiness and security
-
-- `tests/acceptance/README.md` lists the **known open items**: tests marked
-  `xfail(strict=False)` because the behaviour is not there yet. **To fix one:** make the test
-  pass, then delete the mark block at the end of its file and the line in that README. CI fails
-  if an xfail test now passes and still carries the mark.
-- `READINESS.md` is the operational scorecard (install, localhost default, empty start, first
-  admin, backup, restart, logs, CI, docs). Keep it true: a change that moves an item from amber
-  to green edits the row.
-- `SECURITY.md` is the threat model, what was probed, and the findings with their status. A fix
-  for a finding changes its status there and names its test. Report new weaknesses privately
-  (see its last section), never in a public issue.
-
-## Operator settings
-
-Set by an Admin on the in-app Settings page; each has an environment variable that wins when set (README › Configuration). `ASSUMPTIONS.md` says why each exists.
-
-| Setting | Values | Default |
-|---|---|---|
-| `run.block_unclosed_same_dir` | refused, allowed | `allowed` |
-| `run.nested_dirs` | allowed, refused | `refused` |
-| `list.since_timezone` | utc, local | `local` |
+- Operator settings are config keys with an environment override (for example `RUN_BLOCK_UNCLOSED_SAME_DIR`, `RUN_NESTED_DIRS`). A new one goes in the config table in the README, and gets a test for each value. Never hard-code one side of a business rule.
+- Every behaviour has one acceptance test file, `tests/acceptance/test_<what_it_checks>.py`, with a plain docstring saying what it checks and what is expected. Shared helpers live in `tests/acceptance/_helpers/` and drive the product's real interface.
+- Capture is shell-based: commands spawned without a shell, or through an absolute-path shell such as `/bin/sh -c`, are not recorded. Every report states this; keep it true.
+- Flag IDs are derived from a flag's kind and subject, so they stay stable when a report is recomputed.
+- Keep the README quick start working as written, and update this file when a command, module or convention changes.
+- Use plain words in user-facing files.
+- Report security weaknesses as `SECURITY.md` directs, not in a public issue.
 
 ## Maintenance protocol (issues and labels)
 
@@ -107,14 +84,13 @@ Labels are the state; GitHub is the only record. `.github/labels.yml` defines th
    `<!-- bears:claim lease_until=<UTC+6h> branch=<branch> -->  Working on this.` Leave issues
    with `claim:bears` or an assignee alone.
 3. **Branch** from `main`: `<who>/<N>-<slug>` (bears uses `bears/<N>-<slug>`).
-4. **Reproduce first:** write `tests/acceptance/test_<slug>.py` that fails on `main` for the
+4. **Reproduce first:** write a test in the product's own suite (see the tests above) that fails on `main` for the
    reason the issue describes. If you cannot make it fail, label `cannot-reproduce`, say why in a
    comment, remove your claim, and stop.
 5. **Fix** with the smallest change that makes it pass without weakening another test.
 6. **Verify:** run every command in *Setup, run, test*; the whole suite must be green; the
    README's quick start must still work as written.
-7. **Documents:** update this file if a command, module or convention changed; `READINESS.md`
-   or `SECURITY.md` if a row changed; add a line under *Unreleased* in `CHANGELOG.md`.
+7. **Documents:** update this file if a command, module or convention changed; `SECURITY.md` if a known issue changed; add a line under *Unreleased* in `CHANGELOG.md`.
 8. **Open a PR** with the template (`.github/pull_request_template.md`): what and why, the
    failing test's name, the verification you ran, and `Fixes #N`. Remove your claim label; the
    PR is now the lock. **Never push to `main`. Never change `.github/workflows/` in a fix PR.**
@@ -124,7 +100,3 @@ Labels are the state; GitHub is the only record. `.github/labels.yml` defines th
 
 bears follows exactly these steps; its comments carry `<!-- bears:… -->` markers and the PR
 label `bears`. Policy for this repo: `.github/bears.yml`.
-
-## Provenance
-
-Generated by an autonomous software build from a short product brief, with automated checks (its tests, a walk of every documented flow, a security review and a readiness review) before release. See `NOTICE`, `LICENSE` and `READINESS.md`.

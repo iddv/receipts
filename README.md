@@ -17,7 +17,7 @@ Receipts gives you an independent record of what your coding agent actually did.
   receipts list
   ```
 
-The rest of this README covers configuration, data, backup and the full guide; SECURITY.md and READINESS.md say what was checked before this release.
+The rest of this README covers configuration, data, backup and the full guide; SECURITY.md lists the known security issues; the checks that ran before each release are published with it (see NOTICE).
 
 - **Claims the record does not support.** For example, the agent says "all tests pass" but the last test run failed. Or it says it edited a file that is unchanged.
 - **Things the agent did but did not mention.** For example, a deleted test file, a newly added `it.skip`, or a config file it changed quietly.
